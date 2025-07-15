@@ -1,0 +1,10 @@
+/checkpoints
+/DcPose_supp_files
+/work_dirs
+*.pyc
+*.json
+/attention_vis
+/process
+/pure_heatmaps
+/test
+/pretrain_checkpoints
