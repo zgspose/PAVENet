@@ -1489,18 +1489,18 @@ class VideoPoseHeadMulFrames(AnchorFreeHead):
         det_kpts = torch.cat(
             (det_kpts, kpt_scores), dim=2)
         
-        # nms
-        keep, _ = oks_nms(det_kpts, scores, OKS_SCORE, np.array(OKS_SIGMAS) / 10.0)
-        tmp_det_kpts = []
-        tmp_det_labels = []
-        tmp_det_bboxes = []
-        for keep_ in keep:
-            tmp_det_kpts.append(det_kpts[keep_])
-            tmp_det_bboxes.append(det_bboxes[keep_])
-            tmp_det_labels.append(det_labels[keep_])
-        det_bboxes = torch.stack(tmp_det_bboxes, dim=0)
-        det_labels = torch.stack(tmp_det_labels, dim=0)
-        det_kpts = torch.stack(tmp_det_kpts, dim=0)
+        # # nms
+        # keep, _ = oks_nms(det_kpts, scores, OKS_SCORE, np.array(OKS_SIGMAS) / 10.0)
+        # tmp_det_kpts = []
+        # tmp_det_labels = []
+        # tmp_det_bboxes = []
+        # for keep_ in keep:
+        #     tmp_det_kpts.append(det_kpts[keep_])
+        #     tmp_det_bboxes.append(det_bboxes[keep_])
+        #     tmp_det_labels.append(det_labels[keep_])
+        # det_bboxes = torch.stack(tmp_det_bboxes, dim=0)
+        # det_labels = torch.stack(tmp_det_labels, dim=0)
+        # det_kpts = torch.stack(tmp_det_kpts, dim=0)
 
         return det_bboxes, det_labels, det_kpts
     
