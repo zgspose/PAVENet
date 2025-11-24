@@ -1,6 +1,6 @@
 # End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer
 
-This repo is the official implementation for **End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer**. 
+This repo is the official implementation for **End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer**[arxiv](https://arxiv.org/abs/2511.13208). The paper has been accepted to [AAAI 2026](https://aaai.org/conference/aaai/aaai-26/).
 
 
 ## Introduction
@@ -9,18 +9,21 @@ Existing multi-person video pose estimation methods usually follow a two-stage p
 To ensure accurate temporal association, we introduce a pose-aware attention mechanism, enabling each pose query to precisely aggregate features corresponding exclusively to the same individual throughout the video. Additionally, we explicitly model spatiotemporal dependencies among keypoints of each pose, further improving estimation accuracy.
 Extensive experiments on video pose estimation benchmarks demonstrate that our PAVE-Net not only significantly surpasses previous end-to-end image-based methods, but also competes favorably with state-of-the-art two-stage video-based approaches in terms of both accuracy and efficiency.
 
-![PAVENet]()
+![PAVENet](pipeline.png)
 
 ## Weights Download
 The model weights will be uploaded soon. Please stay tuned.
 
 ## Visualizations
-To be updated soon.
+Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
+![Result 1](vs1.png)
+![Result 2](vs2.png)
+
 
 ## Usage and Install 
 To download some auxiliary materials, please refer to [DCPose](https://github.com/Pose-Group/DCPose).
 
-Follow the [PETR]() to install the mmpose.
+Follow the [PETR](https://github.com/hikvision-research/opera) to install the mmpose.
 ### Training
 ```
 python tools/train.py --cfg your_config.yaml
@@ -29,8 +32,17 @@ python tools/train.py --cfg your_config.yaml
 ```
 python tools/test.py --cfg your_config.yaml
 ```
-
+### Citations
+If you find our paper useful in your research, please consider citing:
+```
+@article{yu2025end,
+  title={End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer},
+  author={Yu, Yonghui and Cai, Jiahang and Wang, Xun and Yang, Wenwu},
+  journal={arXiv preprint arXiv:2511.13208},
+  year={2025}
+}
+```
 
 ## Acknowledgment
 
-Our codes are mainly based on [PETR]. Part of our code is borrowed from [PETR](). Many thanks to the authors!
+Our codes are mainly based on [PETR](https://github.com/hikvision-research/opera). Part of our code is borrowed from [DCPose](https://github.com/Pose-Group/DCPose) and [RLE](https://github.com/jeffffffli/res-loglikelihood-regression). Many thanks to the authors!
