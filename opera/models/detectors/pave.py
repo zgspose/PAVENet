@@ -16,7 +16,7 @@ import cv2
 
 
 @DETECTORS.register_module()
-class VideoPoseV1(DETR):
+class PAVE(DETR):
     """Implementation of `End-to-End Multi-Person Pose Estimation with
     Transformers`"""
 
@@ -25,11 +25,6 @@ class VideoPoseV1(DETR):
         self.num_iters = 0
         self.max_iters = 1000
         self.avg_losses = []
-        # 可视化每次迭代的各部分损失 --- encoder初始pose L1-loss and pose-decoder rle-loss and joint-decoder rle-loss
-        self.need_vis_keys = ['enc_loss_kpt', 'd0.loss_kpt', 'd1.loss_kpt', 'loss_kpt', 'd0.loss_kpt_refine', 'd1.loss_kpt_refine']
-        # 初始化损失累加器和计数器
-        self.loss_accum = np.zeros(len(self.need_vis_keys))
-        self.count = 0
 
     def forward_train(self,
                       img,
@@ -62,75 +57,10 @@ class VideoPoseV1(DETR):
             dict[str, Tensor]: A dictionary of loss components.
         """
         super(SingleStageDetector, self).forward_train(img, img_metas)
-        # # 可视化输入
-        # tag = 1
-        # for batch_index in range(img.shape[0]):
-        #     # 单样本所有图片
-        #     imgs = img[batch_index]
-        #     for image in imgs:
-        #         # 将数据归一化到0-1之间
-        #         # 计算最小值和最大值
-        #         min_val = image.min()
-        #         max_val = image.max()
-        #         # 归一化到 [0, 1] 之间
-        #         normalized_img = (image - min_val) / (max_val - min_val)
-        #         normalized_img = normalized_img.cpu().detach().numpy()
-        #         # 转换形状为 (h, w, 3)
-        #         normalized_img = np.transpose(normalized_img, (1, 2, 0))
-        #         normalized_img = normalized_img[:,:,::-1]
-        #         # 将数据转换回 0-255 范围的 uint8 类型
-        #         img_to_save = (normalized_img * 255).astype(np.uint8)
-        #         # 保存图像
-        #         cv2.imwrite(f'demo/image{tag}.png', img_to_save)
-        #         if tag == 3 or tag == 8:
-        #             image = cv2.imread(f'demo/image{tag}.png')
-        #             # 关节点颜色
-        #             colors = [
-        #                 (0, 255, 0),  # 绿色
-        #                 (255, 0, 0),  # 蓝色
-        #                 (0, 0, 255),  # 红色
-        #                 (255, 255, 0),  # 青色
-        #                 (255, 0, 255),  # 洋红色
-        #                 (0, 255, 255)   # 黄色
-        #             ]
-        #             # 绘制关节点
-        #             for person_idx in range(gt_keypoints[batch_index].shape[0]):
-        #                 gt = gt_keypoints[batch_index][person_idx].reshape(-1, 3)
-        #                 for x, y, visible in gt:
-        #                     if visible:  # 仅绘制可见的关节点
-        #                         cv2.circle(image, (int(x), int(y)), 5, colors[2], -1)  # 绘制关节点
-        #             cv2.imwrite(f'demo/image_with_gt{tag}.png', image)
-        #         tag += 1
         x = self.extract_feat(img)
         losses = self.bbox_head.forward_train(x, img_metas, gt_bboxes,
                                               gt_labels, gt_keypoints,
                                               gt_areas, gt_bboxes_ignore)
-        # if self.num_iters < self.max_iters:
-        #     need_loss = []
-        #     for vis_key in self.need_vis_keys:
-        #         need_loss.append(losses[vis_key].cpu().detach().numpy())
-        #     # 累加损失
-        #     self.loss_accum += need_loss
-        #     self.count += 1
-        #     # 每8次迭代计算一次平均值
-        #     if (self.num_iters + 1) % 8 == 0:
-        #         self.avg_losses.append(self.loss_accum / self.count)
-        #         self.loss_accum = np.zeros(len(self.need_vis_keys))  # 重置累加器
-        #         self.count = 0  # 重置计数器
-        #     self.num_iters += 1
-        # if self.num_iters == self.max_iters:
-        #     # 转换为numpy数组以便于绘图
-        #     avg_losses = np.array(self.avg_losses)
-
-        #     # 可视化每种损失的平均值
-        #     plt.figure(figsize=(10, 6))
-        #     for i in range(len(self.need_vis_keys)):
-        #         plt.plot(avg_losses[:, i], label=self.need_vis_keys[i])
-
-        #     plt.xlabel('Iterations')
-        #     plt.ylabel('Loss')
-        #     plt.savefig('/code/video-pose-estimation/demo/vis/loss.png')
-        #     plt.close()
             
         return losses
 

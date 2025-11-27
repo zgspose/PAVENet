@@ -17,10 +17,10 @@ from opera.core.keypoint import gaussian_radius, draw_umich_gaussian
 from opera.models.utils import build_positional_encoding, build_transformer
 from ..builder import HEADS, build_loss
 from easydict import EasyDict
+from collections import Counter
 
-# 添加时间 2024-8-02   ------ 本方法：
 @HEADS.register_module()
-class VideoPoseHeadV1(AnchorFreeHead):
+class PAVEHeadMulFrames(AnchorFreeHead):
     """Head of `End-to-End Multi-Person Pose Estimation with Transformers`.
 
     Args:
@@ -59,6 +59,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
     def __init__(self,
                  num_classes,
                  in_channels,
+                 num_frames=3,
                  num_query=100,
                  num_kpt_fcs=2,
                  num_keypoints=17,
@@ -98,15 +99,15 @@ class VideoPoseHeadV1(AnchorFreeHead):
         self.bg_cls_weight = 0
         self.sync_cls_avg_factor = sync_cls_avg_factor
         if train_cfg:
-            assert 'assigner' in train_cfg, 'assigner should be provided '\
-                'when train_cfg is set.'
+            # assert 'assigner' in train_cfg, 'assigner should be provided '\
+            #     'when train_cfg is set.'
             assigner = train_cfg['assigner']
-            assert loss_cls['loss_weight'] == assigner['cls_cost']['weight'], \
-                'The classification weight for loss and matcher should be' \
-                'exactly the same.'
-            assert loss_kpt['loss_weight'] == assigner['kpt_cost'][
-                'weight'], 'The regression L1 weight for loss and matcher ' \
-                'should be exactly the same.'
+            # assert loss_cls['loss_weight'] == assigner['cls_cost']['weight'], \
+            #     'The classification weight for loss and matcher should be' \
+            #     'exactly the same.'
+            # assert loss_kpt['loss_weight'] == assigner['kpt_cost'][
+            #     'weight'], 'The regression L1 weight for loss and matcher ' \
+            #     'should be exactly the same.'
             self.assigner = build_assigner(assigner)
             # DETR sampling=False, so use PseudoSampler
             sampler_cfg = dict(type='mmdet.PseudoSampler')
@@ -121,6 +122,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
         self.as_two_stage = as_two_stage
         self.with_kpt_refine = with_kpt_refine
         self.num_keypoints = num_keypoints
+        self.num_frames = num_frames
         if self.as_two_stage:
             transformer['as_two_stage'] = self.as_two_stage
         else:
@@ -148,11 +150,11 @@ class VideoPoseHeadV1(AnchorFreeHead):
         assert num_feats * 2 == self.embed_dims, 'embed_dims should' \
             f' be exactly 2 times of num_feats. Found {self.embed_dims}' \
             f' and {num_feats}.'
+            
         self._init_layers()
-
+        
     def _init_layers(self):
         """Initialize classification branch and keypoint branch of head."""
-
         fc_cls = Linear(self.embed_dims, self.cls_out_channels)
 
         kpt_branch = []
@@ -163,6 +165,12 @@ class VideoPoseHeadV1(AnchorFreeHead):
             kpt_branch.append(nn.ReLU())
         kpt_branch.append(Linear(512, 2 * self.num_keypoints))
         kpt_branch = nn.Sequential(*kpt_branch)
+        
+        dec_fc_sigma_branch = []
+        for _ in range(self.num_kpt_fcs):
+            dec_fc_sigma_branch.append(Linear(self.embed_dims, self.embed_dims))
+        dec_fc_sigma_branch.append(Linear_with_norm(self.embed_dims, 2 * self.num_keypoints, norm=False))
+        dec_fc_sigma_branch = nn.Sequential(*dec_fc_sigma_branch)
 
         def _get_clones(module, N):
             return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
@@ -171,10 +179,68 @@ class VideoPoseHeadV1(AnchorFreeHead):
         # encode feature map when as_two_stage is True.
         num_pred = (self.transformer.decoder.num_layers + 1) if \
             self.as_two_stage else self.transformer.decoder.num_layers
+        
+        if self.num_frames == 5:
+            self.pre_pre_kpt_branches = nn.ModuleList()
+            for i in range(num_pred-1):
+                kpt_branch = []
+                kpt_branch.append(Linear(self.embed_dims, 512))
+                kpt_branch.append(nn.ReLU())
+                for _ in range(self.num_kpt_fcs):
+                    kpt_branch.append(Linear(512, 512))
+                    kpt_branch.append(nn.ReLU())
+                kpt_branch.append(Linear(512, 2 * self.num_keypoints))
+                kpt_branch = nn.Sequential(*kpt_branch)
+                self.pre_pre_kpt_branches.append(kpt_branch)
+        else:
+            self.pre_pre_kpt_branches = None
+        
+        self.pre_kpt_branches = nn.ModuleList()
+        for i in range(num_pred-1):
+            kpt_branch = []
+            kpt_branch.append(Linear(self.embed_dims, 512))
+            kpt_branch.append(nn.ReLU())
+            for _ in range(self.num_kpt_fcs):
+                kpt_branch.append(Linear(512, 512))
+                kpt_branch.append(nn.ReLU())
+            kpt_branch.append(Linear(512, 2 * self.num_keypoints))
+            kpt_branch = nn.Sequential(*kpt_branch)
+            self.pre_kpt_branches.append(kpt_branch)
+        
+            
+        self.next_kpt_branches = nn.ModuleList()
+        for i in range(num_pred-1):
+            kpt_branch = []
+            kpt_branch.append(Linear(self.embed_dims, 512))
+            kpt_branch.append(nn.ReLU())
+            for _ in range(self.num_kpt_fcs):
+                kpt_branch.append(Linear(512, 512))
+                kpt_branch.append(nn.ReLU())
+            kpt_branch.append(Linear(512, 2 * self.num_keypoints))
+            kpt_branch = nn.Sequential(*kpt_branch)
+            self.next_kpt_branches.append(kpt_branch)
+            
+        if self.num_frames == 5:
+            self.next_next_kpt_branches = nn.ModuleList()
+            for i in range(num_pred-1):
+                kpt_branch = []
+                kpt_branch.append(Linear(self.embed_dims, 512))
+                kpt_branch.append(nn.ReLU())
+                for _ in range(self.num_kpt_fcs):
+                    kpt_branch.append(Linear(512, 512))
+                    kpt_branch.append(nn.ReLU())
+                kpt_branch.append(Linear(512, 2 * self.num_keypoints))
+                kpt_branch = nn.Sequential(*kpt_branch)
+                self.next_next_kpt_branches.append(kpt_branch)
+        else:
+            self.next_next_kpt_branches = None
+        # -------------------------------------------------------
 
         if self.with_kpt_refine:
             self.cls_branches = _get_clones(fc_cls, num_pred)
             self.kpt_branches = _get_clones(kpt_branch, num_pred)
+            self.dec_fc_sigma_branches = _get_clones(dec_fc_sigma_branch, num_pred)
+            
         else:
             self.cls_branches = nn.ModuleList(
                 [fc_cls for _ in range(num_pred)])
@@ -183,15 +249,14 @@ class VideoPoseHeadV1(AnchorFreeHead):
 
         self.query_embedding = nn.Embedding(self.num_query,
                                             self.embed_dims * 2)
-
+        
         refine_kpt_branch = []
         for _ in range(self.num_kpt_fcs):
             refine_kpt_branch.append(Linear(self.embed_dims, self.embed_dims))
             refine_kpt_branch.append(nn.ReLU())
         refine_kpt_branch.append(Linear(self.embed_dims, 2))
         refine_kpt_branch = nn.Sequential(*refine_kpt_branch)
-        
-        # 用于预测关节点的sigma
+    
         refine_fc_sigma_branch = []
         for _ in range(self.num_kpt_fcs):
             refine_fc_sigma_branch.append(Linear(self.embed_dims, self.embed_dims))
@@ -200,27 +265,68 @@ class VideoPoseHeadV1(AnchorFreeHead):
         
         if self.with_kpt_refine:
             num_pred = self.transformer.refine_decoder.num_layers
+            if self.num_frames == 5:
+                self.pre_pre_refine_kpt_branches = nn.ModuleList()
+                for i in range(num_pred):
+                    refine_kpt_branch = []
+                    for _ in range(self.num_kpt_fcs):
+                        refine_kpt_branch.append(Linear(self.embed_dims, self.embed_dims))
+                        refine_kpt_branch.append(nn.ReLU())
+                    refine_kpt_branch.append(Linear(self.embed_dims, 2))
+                    refine_kpt_branch = nn.Sequential(*refine_kpt_branch)
+                    self.pre_pre_refine_kpt_branches.append(refine_kpt_branch)
+            else:
+                self.pre_pre_refine_kpt_branches = None
+                
+            self.pre_refine_kpt_branches = nn.ModuleList()
+            for i in range(num_pred):
+                refine_kpt_branch = []
+                for _ in range(self.num_kpt_fcs):
+                    refine_kpt_branch.append(Linear(self.embed_dims, self.embed_dims))
+                    refine_kpt_branch.append(nn.ReLU())
+                refine_kpt_branch.append(Linear(self.embed_dims, 2))
+                refine_kpt_branch = nn.Sequential(*refine_kpt_branch)
+                self.pre_refine_kpt_branches.append(refine_kpt_branch)
+                
+            self.next_refine_kpt_branches = nn.ModuleList()
+            for i in range(num_pred):
+                refine_kpt_branch = []
+                for _ in range(self.num_kpt_fcs):
+                    refine_kpt_branch.append(Linear(self.embed_dims, self.embed_dims))
+                    refine_kpt_branch.append(nn.ReLU())
+                refine_kpt_branch.append(Linear(self.embed_dims, 2))
+                refine_kpt_branch = nn.Sequential(*refine_kpt_branch)
+                self.next_refine_kpt_branches.append(refine_kpt_branch)
+            if self.num_frames == 5:
+                self.next_next_refine_kpt_branches = nn.ModuleList()
+                for i in range(num_pred):
+                    refine_kpt_branch = []
+                    for _ in range(self.num_kpt_fcs):
+                        refine_kpt_branch.append(Linear(self.embed_dims, self.embed_dims))
+                        refine_kpt_branch.append(nn.ReLU())
+                    refine_kpt_branch.append(Linear(self.embed_dims, 2))
+                    refine_kpt_branch = nn.Sequential(*refine_kpt_branch)
+                    self.next_next_refine_kpt_branches.append(refine_kpt_branch)
+            else:
+                self.next_next_refine_kpt_branches = None
+            # -------------------------------------------------------
             self.refine_kpt_branches = _get_clones(refine_kpt_branch, num_pred)
-            # 用于预测关节点的sigma网络
             self.refine_fc_sigma_branches = _get_clones(refine_fc_sigma_branch, num_pred)
         self.fc_hm = Linear(self.embed_dims, self.num_keypoints)
         
-        # add flow model
+        # add decoder flow model
         masks = torch.from_numpy(np.array([[0, 1], [1, 0]] * 3).astype(np.float32))
+
+        enc_prior = distributions.MultivariateNormal(torch.zeros(2) + 0.5, torch.eye(2))
+        self.enc_flow = RealNVP(nets, nett, masks, enc_prior)
+        
+        dec_prior = distributions.MultivariateNormal(torch.zeros(2) + 0.5, torch.eye(2))
+        self.dec_flow = RealNVP(nets, nett, masks, dec_prior)
+        
         prior = distributions.MultivariateNormal(torch.zeros(2) + 0.5, torch.eye(2))
         self.flow = RealNVP(nets, nett, masks, prior)
         
-        
-        # # 固定enc
-        # for param in self.cls_branches[-1].parameters():
-        #     param.requires_grad = False
-        # for param in self.kpt_branches[-1].parameters():
-        #     param.requires_grad = False
-        # # 固定hm
-        # for param in self.fc_hm.parameters():
-        #     param.requires_grad = False
-        
-
+    
     def init_weights(self):
         """Initialize weights of the PETR head."""
         self.transformer.init_weights()
@@ -230,10 +336,18 @@ class VideoPoseHeadV1(AnchorFreeHead):
                 nn.init.constant_(m.bias, bias_init)
         for m in self.kpt_branches:
             constant_init(m[-1], 0, bias=0)
+        # for m in self.pre_kpt_branches:
+        #     constant_init(m[-1], 0, bias=0)
+        # for m in self.next_kpt_branches:
+        #     constant_init(m[-1], 0, bias=0)
         # initialization of keypoint refinement branch
         if self.with_kpt_refine:
-            for m in self.refine_kpt_branches:
+            for m in self.pre_refine_kpt_branches:
                 constant_init(m[-1], 0, bias=0)
+            # for m in self.refine_kpt_branches:
+            #     constant_init(m[-1], 0, bias=0)
+            # for m in self.next_refine_kpt_branches:
+            #     constant_init(m[-1], 0, bias=0)
         # initialize bias for heatmap prediction
         bias_init = bias_init_with_prob(0.1)
         normal_init(self.fc_hm, std=0.01, bias=bias_init)
@@ -264,12 +378,12 @@ class VideoPoseHeadV1(AnchorFreeHead):
                 `None` would be returned.
         """
 
-        batch_size = mlvl_feats[0].size(0)  # 这里实际上batch-size大小 为 batch-size // 3
+        batch_size = mlvl_feats[0].size(0)
         input_img_h, input_img_w = img_metas[0]['batch_input_shape']
         img_masks = mlvl_feats[0].new_ones(
             (batch_size, input_img_h, input_img_w))
         for img_id in range(batch_size):
-            img_h, img_w, _ = img_metas[img_id // 3]['img_shape']
+            img_h, img_w, _ = img_metas[img_id // self.num_frames]['img_shape']
             img_masks[img_id, :img_h, :img_w] = 0
 
         mlvl_masks = []
@@ -281,39 +395,104 @@ class VideoPoseHeadV1(AnchorFreeHead):
             mlvl_positional_encodings.append(
                 self.positional_encoding(mlvl_masks[-1]))
 
-        query_embeds = self.query_embedding.weight
+        query_embeds = self.query_embedding.weight # shape: num_querys, embed_dims
+        
         hs, init_reference, inter_references, \
-            enc_outputs_class, enc_outputs_kpt, hm_proto, memory = \
+            enc_outputs_class, enc_outputs_kpt, enc_outputs_sigma, hm_proto, memory = \
                 self.transformer(
                     mlvl_feats,
                     mlvl_masks,
                     query_embeds,
                     mlvl_positional_encodings,
+                    pre_pre_kpt_branches=self.pre_pre_kpt_branches \
+                        if self.with_kpt_refine else None,  # noqa:E501
+                    pre_kpt_branches=self.pre_kpt_branches \
+                        if self.with_kpt_refine else None,  # noqa:E501
                     kpt_branches=self.kpt_branches \
                         if self.with_kpt_refine else None,  # noqa:E501
+                    next_kpt_branches=self.next_kpt_branches \
+                        if self.with_kpt_refine else None,  # noqa:E501
+                    next_next_kpt_branches=self.next_next_kpt_branches \
+                        if self.with_kpt_refine else None,  # noqa:E501
                     cls_branches=self.cls_branches \
+                        if self.as_two_stage else None,  # noqa:E501
+                    sigma_branches=self.dec_fc_sigma_branches \
                         if self.as_two_stage else None  # noqa:E501
             )
+                
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []
         outputs_kpts = []
+        output_sigmas = []
 
         for lvl in range(hs.shape[0]):
             if lvl == 0:
                 reference = init_reference
             else:
                 reference = inter_references[lvl - 1]
-            reference = inverse_sigmoid(reference)
-            outputs_class = self.cls_branches[lvl](hs[lvl])
-            tmp_kpt = self.kpt_branches[lvl](hs[lvl])
-            assert reference.shape[-1] == self.num_keypoints * 2
-            tmp_kpt += reference
-            outputs_kpt = tmp_kpt.sigmoid()
-            outputs_classes.append(outputs_class)
-            outputs_kpts.append(outputs_kpt)
-
+            if self.num_frames == 5:
+                pre_pre_reference = reference[:, :self.num_query]
+                pre_reference = reference[:, self.num_query:self.num_query*2]
+                next_reference = reference[:, self.num_query*3:self.num_query*4]
+                next_next_reference = reference[:, self.num_query*4:]
+                
+                pre_pre_reference = inverse_sigmoid(pre_pre_reference)
+                pre_pre_tmp_kpt = self.pre_pre_kpt_branches[lvl](hs[lvl])
+                pre_pre_pose_kpt = (pre_pre_tmp_kpt + pre_pre_reference).sigmoid()
+                
+                pre_reference = inverse_sigmoid(pre_reference)
+                pre_tmp_kpt = self.pre_kpt_branches[lvl](hs[lvl])
+                pre_pose_kpt = (pre_tmp_kpt + pre_reference).sigmoid()
+                
+                next_reference = inverse_sigmoid(next_reference)
+                next_tmp_kpt = self.next_kpt_branches[lvl](hs[lvl])
+                next_pose_kpt = (next_tmp_kpt + next_reference).sigmoid()
+                
+                next_next_reference = inverse_sigmoid(next_next_reference)
+                next_next_tmp_kpt = self.next_kpt_branches[lvl](hs[lvl])
+                next_next_pose_kpt = (next_next_tmp_kpt + next_next_reference).sigmoid()
+                
+                reference = reference[:, self.num_query*2:self.num_query*3]
+                reference = inverse_sigmoid(reference)
+                outputs_class = self.cls_branches[lvl](hs[lvl])
+                tmp_kpt = self.kpt_branches[lvl](hs[lvl])
+                sigma = self.dec_fc_sigma_branches[lvl](hs[lvl])
+                output_sigma = sigma.sigmoid()
+                assert reference.shape[-1] == self.num_keypoints * 2
+                tmp_kpt += reference
+                outputs_kpt = tmp_kpt.sigmoid()
+                outputs_classes.append(outputs_class)
+                outputs_kpts.append(outputs_kpt)
+                output_sigmas.append(output_sigma)
+                
+            else:
+                pre_reference = reference[:, :self.num_query]
+                next_reference = reference[:, self.num_query*2:]
+                
+                pre_reference = inverse_sigmoid(pre_reference)
+                pre_tmp_kpt = self.pre_kpt_branches[lvl](hs[lvl])
+                pre_pose_kpt = (pre_tmp_kpt + pre_reference).sigmoid()
+                
+                next_reference = inverse_sigmoid(next_reference)
+                next_tmp_kpt = self.next_kpt_branches[lvl](hs[lvl])
+                next_pose_kpt = (next_tmp_kpt + next_reference).sigmoid()
+                
+                reference = reference[:, self.num_query:self.num_query*2]
+                reference = inverse_sigmoid(reference)
+                outputs_class = self.cls_branches[lvl](hs[lvl])
+                tmp_kpt = self.kpt_branches[lvl](hs[lvl])
+                sigma = self.dec_fc_sigma_branches[lvl](hs[lvl])
+                output_sigma = sigma.sigmoid()
+                assert reference.shape[-1] == self.num_keypoints * 2
+                tmp_kpt += reference
+                outputs_kpt = tmp_kpt.sigmoid()
+                outputs_classes.append(outputs_class)
+                outputs_kpts.append(outputs_kpt)
+                output_sigmas.append(output_sigma)
+        
         outputs_classes = torch.stack(outputs_classes)
         outputs_kpts = torch.stack(outputs_kpts)
+        output_sigmas = torch.stack(output_sigmas)
 
         if hm_proto is not None:
             # get heatmap prediction (training phase)
@@ -322,16 +501,19 @@ class VideoPoseHeadV1(AnchorFreeHead):
             hm_proto = (hm_pred.permute(0, 3, 1, 2), hm_mask)
 
         if self.as_two_stage:
-            # 处理下，只使用当前帧的数据
-            for i in range(len(mlvl_masks)):
-                mlvl_masks[i] = mlvl_masks[i][1::3]
-            return outputs_classes, outputs_kpts, \
-                enc_outputs_class, enc_outputs_kpt.sigmoid(), \
-                hm_proto, memory, mlvl_masks
+            if self.num_frames == 5:
+                return outputs_classes, outputs_kpts, output_sigmas, \
+                    enc_outputs_class, enc_outputs_kpt.sigmoid(), \
+                    enc_outputs_sigma.sigmoid(), hm_proto, memory, mlvl_masks, pre_pre_pose_kpt, pre_pose_kpt, next_pose_kpt, next_next_pose_kpt
+            else:
+                return outputs_classes, outputs_kpts, output_sigmas, \
+                    enc_outputs_class, enc_outputs_kpt.sigmoid(),  \
+                    enc_outputs_sigma.sigmoid(), hm_proto, memory, mlvl_masks, None, pre_pose_kpt, next_pose_kpt, None
         else:
             raise RuntimeError('only "as_two_stage=True" is supported.')
-
-    def forward_refine(self, memory, mlvl_masks, refine_targets, losses,
+        
+    def forward_refine(self, memory, mlvl_masks, pre_pre_pose_kpt, pre_pose_kpt, next_pose_kpt, next_next_pose_kpt,
+                       refine_targets, losses,
                        img_metas):
         """Forward function.
 
@@ -349,21 +531,43 @@ class VideoPoseHeadV1(AnchorFreeHead):
         pos_inds = kpt_weights.sum(-1) > 0
         if pos_inds.sum() == 0:
             pos_kpt_preds = torch.zeros_like(kpt_preds[:1])
+            if self.num_frames == 5:
+                pos_kpt_preds = torch.concat([pos_kpt_preds, pos_kpt_preds, pos_kpt_preds, pos_kpt_preds, pos_kpt_preds], dim=0)
+            else:
+                pos_kpt_preds = torch.concat([pos_kpt_preds, pos_kpt_preds, pos_kpt_preds], dim=0)
             pos_img_inds = kpt_preds.new_zeros([1], dtype=torch.int64)
         else:
-            pos_kpt_preds = kpt_preds[pos_inds]
+            if self.training:
+                if self.num_frames == 5:
+                    pre_pre_pose_kpt = pre_pre_pose_kpt.flatten(0, 1) # bs*num_querys, num_keypoints*2
+                    pre_pose_kpt = pre_pose_kpt.flatten(0, 1) # bs*num_querys, num_keypoints*2
+                    next_pose_kpt = next_pose_kpt.flatten(0, 1) # bs*num_querys, num_keypoints*2
+                    next_next_pose_kpt = next_next_pose_kpt.flatten(0, 1) # bs*num_querys, num_keypoints*2
+                else:
+                    pre_pose_kpt = pre_pose_kpt.flatten(0, 1) # bs*num_querys, num_keypoints*2
+                    next_pose_kpt = next_pose_kpt.flatten(0, 1) # bs*num_querys, num_keypoints*2
+            
+            if self.num_frames == 5:
+                pos_kpt_preds = torch.concat([pre_pre_pose_kpt[pos_inds], pre_pose_kpt[pos_inds], kpt_preds[pos_inds], next_pose_kpt[pos_inds], next_next_pose_kpt[pos_inds]], dim=0)
+            else:
+                pos_kpt_preds = torch.concat([pre_pose_kpt[pos_inds], kpt_preds[pos_inds], next_pose_kpt[pos_inds]], dim=0)
+            
             pos_img_inds = (pos_inds.nonzero() / self.num_query).squeeze(1).to(
                 torch.int64)
+
         hs, init_reference, inter_references = self.transformer.forward_refine(
             mlvl_masks,
-            memory,
+            memory.reshape(memory.size(0), -1, self.num_frames, memory.size(-1)),
             pos_kpt_preds.detach(),
             pos_img_inds,
+            pre_pre_kpt_branches=self.pre_pre_refine_kpt_branches if self.with_kpt_refine else None,  # noqa:E501
+            pre_kpt_branches=self.pre_refine_kpt_branches if self.with_kpt_refine else None,  # noqa:E501
             kpt_branches=self.refine_kpt_branches if self.with_kpt_refine else None,  # noqa:E501
+            next_kpt_branches=self.next_refine_kpt_branches if self.with_kpt_refine else None,  # noqa:E501
+            next_next_kpt_branches=self.next_next_refine_kpt_branches if self.with_kpt_refine else None,  # noqa:E501
         )
         hs = hs.permute(0, 2, 1, 3)
         outputs_kpts = []
-        # reference from 标准化流
         outputs_sigmas = []
         outputs_scores = []
 
@@ -372,23 +576,37 @@ class VideoPoseHeadV1(AnchorFreeHead):
                 reference = init_reference
             else:
                 reference = inter_references[lvl - 1]
-            reference = inverse_sigmoid(reference)
-            
-            tmp_kpt = self.refine_kpt_branches[lvl](hs[lvl])
-            
-            tmp_sigma = self.refine_fc_sigma_branches[lvl](hs[lvl]).sigmoid()
-            score = 1 - tmp_sigma
-            score = torch.mean(score, dim=2, keepdim=True)
-            outputs_score = score
-            outputs_scores.append(outputs_score)
-            
-            assert reference.shape[-1] == 2
-            tmp_kpt += reference
-            outputs_kpt = tmp_kpt.sigmoid()
-            outputs_kpts.append(outputs_kpt)
-            
-            outputs_sigma = tmp_sigma
-            outputs_sigmas.append(outputs_sigma)
+            num_gts = reference.shape[0] // self.num_frames
+            if self.num_frames == 5:
+                reference = reference[num_gts*2:num_gts*3]
+                reference = inverse_sigmoid(reference)
+                tmp_kpt = self.refine_kpt_branches[lvl](hs[lvl])
+                tmp_sigma = self.refine_fc_sigma_branches[lvl](hs[lvl]).sigmoid()
+                score = 1 - tmp_sigma
+                score = torch.mean(score, dim=2, keepdim=True)
+                outputs_score = score
+                outputs_scores.append(outputs_score)
+                assert reference.shape[-1] == 2
+                tmp_kpt += reference
+                outputs_kpt = tmp_kpt.sigmoid()
+                outputs_kpts.append(outputs_kpt)
+                outputs_sigma = tmp_sigma
+                outputs_sigmas.append(outputs_sigma)
+            else:
+                reference = reference[num_gts:num_gts*2]
+                reference = inverse_sigmoid(reference)
+                tmp_kpt = self.refine_kpt_branches[lvl](hs[lvl])
+                tmp_sigma = self.refine_fc_sigma_branches[lvl](hs[lvl]).sigmoid()
+                score = 1 - tmp_sigma
+                score = torch.mean(score, dim=2, keepdim=True)
+                outputs_score = score
+                outputs_scores.append(outputs_score)
+                assert reference.shape[-1] == 2
+                tmp_kpt += reference
+                outputs_kpt = tmp_kpt.sigmoid()
+                outputs_kpts.append(outputs_kpt)
+                outputs_sigma = tmp_sigma
+                outputs_sigmas.append(outputs_sigma)
             
         outputs_kpts = torch.stack(outputs_kpts)
         outputs_sigmas = torch.stack(outputs_sigmas)
@@ -397,7 +615,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
         if not self.training:
             return outputs_kpts, outputs_scores, outputs_sigmas
 
-        batch_size = mlvl_masks[0].size(0)
+        batch_size = mlvl_masks[0].size(0) // self.num_frames
         factors = []
         for img_id in range(batch_size):
             img_h, img_w, _ = img_metas[img_id]['img_shape']
@@ -414,26 +632,44 @@ class VideoPoseHeadV1(AnchorFreeHead):
         num_total_pos = torch.clamp(reduce_mean(num_total_pos), min=1).item()
         pos_kpt_weights = kpt_weights[pos_inds]
         pos_kpt_targets = kpt_targets[pos_inds]
-        pos_kpt_targets_scaled = pos_kpt_targets * factors
-        pos_areas = area_targets[pos_inds]
-        pos_valid = kpt_weights[pos_inds, 0::2]
+        # pos_kpt_targets_scaled = pos_kpt_targets * factors
+        # pos_areas = area_targets[pos_inds]
+        # pos_valid = kpt_weights[pos_inds, 0::2]
+        
         for i, (kpt_refine_preds, kpt_refine_sigma) in enumerate(zip(outputs_kpts, outputs_sigmas)):
             if pos_inds.sum() == 0:
                 loss_kpt = loss_oks = kpt_refine_preds.sum() * 0
                 losses[f'd{i}.loss_kpt_refine'] = loss_kpt
-                losses[f'd{i}.loss_oks_refine'] = loss_oks
+                # losses[f'd{i}.loss_oks_refine'] = loss_oks
                 continue
-            # kpt L1 Loss
+            # kpt rle loss
+            bs = kpt_refine_preds.size(0)
             # pos_refine_preds = kpt_refine_preds.reshape(
-            #     kpt_refine_preds.size(0), -1)
-            # loss_kpt = self.loss_kpt_refine(
-            #     pos_refine_preds,
-            #     pos_kpt_targets,
-            #     pos_kpt_weights,
-            #     avg_factor=num_valid_kpt)
-            # losses[f'd{i}.loss_kpt_refine'] = loss_kpt
+            #     bs, -1)   # shape: bs, 30
+            all_gts = pos_kpt_targets.reshape(bs, -1, 2)
+            gt_weights = pos_kpt_weights.reshape(bs, -1, 2)
             
-            # kpt oks loss
+            pred = kpt_refine_preds
+            sigma = kpt_refine_sigma
+            bar_mu = (pred - all_gts) / sigma
+            
+            log_phi = self.flow.log_prob(bar_mu.reshape(-1, 2)).reshape(bs, -1, 1)
+            nf_loss = torch.log(sigma) - log_phi 
+            
+            output = EasyDict(
+                pred_jts=pred,
+                sigma=sigma,
+                nf_loss=nf_loss
+            )
+            labels = EasyDict(
+                target_uv=all_gts,
+                target_uv_weight=gt_weights
+            )
+            
+            loss_kpt = self.loss_kpt_refine(output, labels, num_valid_kpt)
+            losses[f'd{i}.loss_kpt_refine'] = loss_kpt
+            # # oks loss
+            # losses[f'd{i}.loss_kpt_refine'] = loss_kpt
             # pos_refine_preds_scaled = pos_refine_preds * factors
             # assert (pos_areas > 0).all()
             # loss_oks = self.loss_oks_refine(
@@ -443,33 +679,6 @@ class VideoPoseHeadV1(AnchorFreeHead):
             #     pos_areas,
             #     avg_factor=num_total_pos)
             # losses[f'd{i}.loss_oks_refine'] = loss_oks
-             # kpt rle loss
-            bs = kpt_refine_preds.size(0)
-            pos_refine_preds = kpt_refine_preds.reshape(
-                bs, -1)   # shape: bs, 30
-            
-            all_gts = pos_kpt_targets.reshape(bs, -1, 2)
-            gt_weights = pos_kpt_weights.reshape(bs, -1, 2)
-            pred = kpt_refine_preds
-            sigmas = kpt_refine_sigma
-            bar_mu = (pred - all_gts) / sigmas
-            log_phi = self.flow.log_prob(bar_mu.reshape(-1, 2)).reshape(bs, -1, 1)
-            nf_loss = torch.log(sigmas) - log_phi 
-            pred_jts = pred
-            sigma = sigmas
-            
-            output = EasyDict(
-                pred_jts=pred_jts,
-                sigma=sigma,
-                nf_loss=nf_loss
-            )
-            labels = EasyDict(
-                target_uv=all_gts,
-                target_uv_weight=gt_weights
-            )
-            loss_kpt = self.loss_kpt_refine(output, labels)
-            losses[f'd{i}.loss_kpt_refine'] = loss_kpt
-            
         return losses
 
     # over-write because img_metas are needed as inputs for bbox_head.
@@ -507,8 +716,8 @@ class VideoPoseHeadV1(AnchorFreeHead):
         """
         assert proposal_cfg is None, '"proposal_cfg" must be None'
         outs = self(x, img_metas)
-        memory, mlvl_masks = outs[-2:]
-        outs = outs[:-2]
+        memory, mlvl_masks, pre_pre_pose_kpt, pre_pose_kpt, next_pose_kpt, next_next_pose_kpt = outs[-6:]
+        outs = outs[:-6]
         if gt_labels is None:
             loss_inputs = outs + (gt_bboxes, gt_keypoints, gt_areas, img_metas)
         else:
@@ -518,16 +727,18 @@ class VideoPoseHeadV1(AnchorFreeHead):
             *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
         losses, refine_targets = losses_and_targets
         # get pose refinement loss
-        losses = self.forward_refine(memory, mlvl_masks, refine_targets,
-                                     losses, img_metas)
+        losses = self.forward_refine(memory, mlvl_masks, pre_pre_pose_kpt, pre_pose_kpt, next_pose_kpt, next_next_pose_kpt,
+                                     refine_targets, losses, img_metas)
         return losses
 
     @force_fp32(apply_to=('all_cls_scores', 'all_kpt_preds'))
     def loss(self,
              all_cls_scores,
              all_kpt_preds,
+             all_sigma_preds,
              enc_cls_scores,
              enc_kpt_preds,
+             enc_sigma_preds,
              enc_hm_proto,
              gt_bboxes_list,
              gt_labels_list,
@@ -582,7 +793,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
 
         losses_cls, losses_kpt, losses_oks, kpt_preds_list, kpt_targets_list, \
             area_targets_list, kpt_weights_list = multi_apply(
-                self.loss_single, all_cls_scores, all_kpt_preds,
+                self.loss_single, all_cls_scores, all_kpt_preds, all_sigma_preds,
                 all_gt_labels_list, all_gt_keypoints_list,
                 all_gt_areas_list, img_metas_list)
 
@@ -595,7 +806,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
             ]
             enc_loss_cls, enc_losses_kpt = \
                 self.loss_single_rpn(
-                    enc_cls_scores, enc_kpt_preds, binary_labels_list,
+                    enc_cls_scores, enc_kpt_preds, enc_sigma_preds, binary_labels_list,
                     gt_keypoints_list, gt_areas_list, img_metas)
             loss_dict['enc_loss_cls'] = enc_loss_cls
             loss_dict['enc_loss_kpt'] = enc_losses_kpt
@@ -603,21 +814,21 @@ class VideoPoseHeadV1(AnchorFreeHead):
         # loss from the last decoder layer
         loss_dict['loss_cls'] = losses_cls[-1]
         loss_dict['loss_kpt'] = losses_kpt[-1]
-        loss_dict['loss_oks'] = losses_oks[-1]
+        # loss_dict['loss_oks'] = losses_oks[-1]
         # loss from other decoder layers
         num_dec_layer = 0
         for loss_cls_i, loss_kpt_i, loss_oks_i in zip(
                 losses_cls[:-1], losses_kpt[:-1], losses_oks[:-1]):
             loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
             loss_dict[f'd{num_dec_layer}.loss_kpt'] = loss_kpt_i
-            loss_dict[f'd{num_dec_layer}.loss_oks'] = loss_oks_i
+            # loss_dict[f'd{num_dec_layer}.loss_oks'] = loss_oks_i
             num_dec_layer += 1
 
         # losses of heatmap generated from P3 feature map
-        hm_pred, hm_mask = enc_hm_proto
-        loss_hm = self.loss_heatmap(hm_pred, hm_mask, gt_keypoints_list,
-                                    gt_labels_list, gt_bboxes_list)
-        loss_dict['loss_hm'] = loss_hm
+        # hm_pred, hm_mask = enc_hm_proto
+        # loss_hm = self.loss_heatmap(hm_pred, hm_mask, gt_keypoints_list,
+        #                             gt_labels_list, gt_bboxes_list)
+        # loss_dict['loss_hm'] = loss_hm
 
         return loss_dict, (kpt_preds_list[-1], kpt_targets_list[-1],
                            area_targets_list[-1], kpt_weights_list[-1])
@@ -661,6 +872,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
     def loss_single(self,
                     cls_scores,
                     kpt_preds,
+                    sigma_preds,
                     gt_labels_list,
                     gt_keypoints_list,
                     gt_areas_list,
@@ -690,6 +902,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
         num_imgs = cls_scores.size(0)
         cls_scores_list = [cls_scores[i] for i in range(num_imgs)]
         kpt_preds_list = [kpt_preds[i] for i in range(num_imgs)]
+        # matchCost
         cls_reg_targets = self.get_targets(cls_scores_list, kpt_preds_list,
                                            gt_labels_list, gt_keypoints_list,
                                            gt_areas_list, img_metas)
@@ -731,12 +944,38 @@ class VideoPoseHeadV1(AnchorFreeHead):
 
         # keypoint regression loss
         kpt_preds = kpt_preds.reshape(-1, kpt_preds.shape[-1])
+        sigmas_preds = sigma_preds.reshape(-1, kpt_preds.shape[-1])
         num_valid_kpt = torch.clamp(
             reduce_mean(kpt_weights.sum()), min=1).item()
         # assert num_valid_kpt == (kpt_targets>0).sum().item()
-        loss_kpt = self.loss_kpt(
-            kpt_preds, kpt_targets, kpt_weights, avg_factor=num_valid_kpt)
-
+        # compute keypoints rle loss
+        pos_inds = kpt_weights.sum(-1) > 0
+        if pos_inds.sum() == 0:
+            kpt_preds_tmp = torch.zeros_like(kpt_preds[:1])
+            loss_kpt = kpt_preds_tmp.sum() * 0
+        else:
+            kpt_preds_tmp = kpt_preds[pos_inds]
+            kpt_targets_tmp = kpt_targets[pos_inds] # num_gt, 30
+            kpt_weights_tmp = kpt_weights[pos_inds] # num_gt, 30
+            sigmas_preds = sigmas_preds[pos_inds] # num_gt, 30
+            num_gt = kpt_preds_tmp.size(0)
+            all_gts = kpt_targets_tmp.reshape(num_gt, -1, 2)
+            gt_weights = kpt_weights_tmp.reshape(num_gt, -1, 2)
+            pred = kpt_preds_tmp.reshape(num_gt, -1, 2)
+            sigma = sigmas_preds.reshape(num_gt, -1, 2)
+            bar_mu = (pred - all_gts) / sigma
+            log_phi = self.dec_flow.log_prob(bar_mu.reshape(-1, 2)).reshape(num_gt, -1, 1)
+            nf_loss = torch.log(sigma) - log_phi
+            output = EasyDict(
+                pred_jts=pred,
+                sigma=sigma,
+                nf_loss=nf_loss
+            )
+            labels = EasyDict(
+                target_uv=all_gts,
+                target_uv_weight=gt_weights
+            )
+            loss_kpt = self.loss_kpt(output, labels, num_valid_kpt)
         # keypoint oks loss
         pos_inds = kpt_weights.sum(-1) > 0
         factors = factors[pos_inds][:, :2].repeat(1, kpt_preds.shape[-1] // 2)
@@ -900,6 +1139,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
     def loss_single_rpn(self,
                         cls_scores,
                         kpt_preds,
+                        sigma_preds,
                         gt_labels_list,
                         gt_keypoints_list,
                         gt_areas_list,
@@ -960,11 +1200,44 @@ class VideoPoseHeadV1(AnchorFreeHead):
 
         # keypoint regression loss
         kpt_preds = kpt_preds.reshape(-1, kpt_preds.shape[-1])
+        sigma_preds = sigma_preds.reshape(-1, kpt_preds.shape[-1])
         num_valid_kpt = torch.clamp(
             reduce_mean(kpt_weights.sum()), min=1).item()
         # assert num_valid_kpt == (kpt_targets>0).sum().item()
-        loss_kpt = self.loss_kpt_rpn(
-            kpt_preds, kpt_targets, kpt_weights, avg_factor=num_valid_kpt)
+        # compute keypoints rle loss
+        pos_inds = kpt_weights.sum(-1) > 0
+        if pos_inds.sum() == 0:
+            kpt_preds_tmp = torch.zeros_like(kpt_preds[:1])
+            loss_kpt = kpt_preds_tmp.sum() * 0
+        else:
+            kpt_preds_tmp = kpt_preds[pos_inds]
+            kpt_targets_tmp = kpt_targets[pos_inds] # num_gt, 30
+            kpt_weights_tmp = kpt_weights[pos_inds] # num_gt, 30
+            sigma_preds = sigma_preds[pos_inds] # num_gt, 30
+            
+            num_gt = kpt_preds_tmp.size(0)
+            all_gts = kpt_targets_tmp.reshape(num_gt, -1, 2)
+            gt_weights = kpt_weights_tmp.reshape(num_gt, -1, 2)
+            pred = kpt_preds_tmp.reshape(num_gt, -1, 2)
+            sigma = sigma_preds.reshape(num_gt, -1, 2)
+            bar_mu = (pred - all_gts) / sigma
+            log_phi = self.enc_flow.log_prob(bar_mu.reshape(-1, 2)).reshape(num_gt, -1, 1)
+            nf_loss = torch.log(sigma) - log_phi
+            output = EasyDict(
+                pred_jts=pred,
+                sigma=sigma,
+                nf_loss=nf_loss
+            )
+            labels = EasyDict(
+                target_uv=all_gts,
+                target_uv_weight=gt_weights
+            )
+            loss_kpt = self.loss_kpt_rpn(output, labels, num_valid_kpt)
+        # num_valid_kpt = torch.clamp(
+        #     reduce_mean(kpt_weights.sum()), min=1).item()
+        # # assert num_valid_kpt == (kpt_targets>0).sum().item()
+        # loss_kpt = self.loss_kpt_rpn(
+        #     kpt_preds, kpt_targets, kpt_weights, avg_factor=num_valid_kpt)
 
         return loss_cls, loss_kpt
 
@@ -972,11 +1245,17 @@ class VideoPoseHeadV1(AnchorFreeHead):
     def get_bboxes(self,
                    all_cls_scores,
                    all_kpt_preds,
+                   all_sigma_preds,
                    enc_cls_scores,
                    enc_kpt_preds,
+                   enc_sigma_preds,
                    hm_proto,
                    memory,
                    mlvl_masks,
+                   pre_pre_pose_kpt,
+                   pre_pose_kpt,
+                   next_pose_kpt,
+                   next_next_pose_kpt,
                    img_metas,
                    rescale=False):
         """Transform network outputs for a batch into bbox predictions.
@@ -1023,7 +1302,7 @@ class VideoPoseHeadV1(AnchorFreeHead):
             # TODO: only support single image test
             # memory_i = memory[:, img_id, :]
             # mlvl_mask = mlvl_masks[img_id]
-            proposals = self._get_bboxes_single(cls_score, kpt_pred,
+            proposals = self._get_bboxes_single(cls_score, kpt_pred, pre_pre_pose_kpt, pre_pose_kpt, next_pose_kpt, next_next_pose_kpt,
                                                 img_shape, scale_factor,
                                                 memory, mlvl_masks, rescale)
             result_list.append(proposals)
@@ -1032,6 +1311,10 @@ class VideoPoseHeadV1(AnchorFreeHead):
     def _get_bboxes_single(self,
                            cls_score,
                            kpt_pred,
+                           pre_pre_pose_kpt,
+                           pre_pose_kpt,
+                           next_pose_kpt,
+                           next_next_pose_kpt,
                            img_shape,
                            scale_factor,
                            memory,
@@ -1063,8 +1346,6 @@ class VideoPoseHeadV1(AnchorFreeHead):
                     shape [num_query].
                 - det_kpts: Predicted keypoints with shape [num_query, K, 3].
         """
-        OKS_SCORE = 0.8
-        OKS_SIGMAS = [.26, .25, .25, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89]
         assert len(cls_score) == len(kpt_pred)
         max_per_img = self.test_cfg.get('max_per_img', self.num_query)
         # exclude background
@@ -1074,25 +1355,30 @@ class VideoPoseHeadV1(AnchorFreeHead):
             det_labels = indexs % self.num_classes
             bbox_index = indexs // self.num_classes
             kpt_pred = kpt_pred[bbox_index]
+            if self.num_frames == 5:
+                pre_pre_pose_kpt = pre_pre_pose_kpt.flatten(0, 1)[bbox_index]
+                pre_pose_kpt = pre_pose_kpt.flatten(0, 1)[bbox_index]
+                next_pose_kpt = next_pose_kpt.flatten(0, 1)[bbox_index]
+                next_next_pose_kpt = next_next_pose_kpt.flatten(0, 1)[bbox_index]
+            else:
+                pre_pose_kpt = pre_pose_kpt.flatten(0, 1)[bbox_index]
+                next_pose_kpt = next_pose_kpt.flatten(0, 1)[bbox_index]
         else:
             scores, det_labels = F.softmax(cls_score, dim=-1)[..., :-1].max(-1)
             scores, bbox_index = scores.topk(max_per_img)
             kpt_pred = kpt_pred[bbox_index]
             det_labels = det_labels[bbox_index]
 
-        # ----- results after pose decoder -----
-        # det_kpts = kpt_pred.reshape(kpt_pred.size(0), -1, 2)
 
         # ----- results after joint decoder (default) -----
         # import time
         # start = time.time()
         refine_targets = (kpt_pred, None, None, torch.ones_like(kpt_pred))
-        refine_outputs = self.forward_refine(memory, mlvl_masks,
-                                             refine_targets, None, None)
+        refine_outputs = self.forward_refine(memory.reshape(memory.size(0), -1, self.num_frames, memory.size(-1)), mlvl_masks, pre_pre_pose_kpt, pre_pose_kpt, next_pose_kpt, next_next_pose_kpt,
+                                                refine_targets, None, None)
         # end = time.time()
         # print(f'refine time: {end - start:.6f}')
-        
-        # refine_outputs: 包含2层decoder-layer关节点的输出结果以及每个关节点的得分score,这里只使用最后一层的结果
+
         det_kpts = refine_outputs[0][-1]
         det_kpts_score = refine_outputs[1][-1] # shape： 100, 15, 1
         det_kpts_sigmas = refine_outputs[2][-1] # shape: 100, 15, 2
@@ -1112,7 +1398,6 @@ class VideoPoseHeadV1(AnchorFreeHead):
         y2 = det_kpts[..., 1].max(dim=1, keepdim=True)[0]
         det_bboxes = torch.cat([x1, y1, x2, y2], dim=1)
         
-        # poseur 调整了det_kpts_score  --------------------------------------------------------------------------------------------------------------------------------------
         output_regression_sigma = det_kpts_sigmas
         output_regression = det_kpts
         
@@ -1124,32 +1409,13 @@ class VideoPoseHeadV1(AnchorFreeHead):
     
         det_kpts_score = output_regression_score
         det_kpts = output_regression
-        # -------------------------------------------------------------------------------------------------------------------------------------------------------------------
         
-        # follow rle and poseur
-        # scores = scores + torch.mean(det_kpts_score, dim=1).squeeze(-1) + torch.max(det_kpts_score, dim=1)[0].squeeze(-1)
-        # det_bboxes_scores = scores * torch.mean(det_kpts_score, dim=1).squeeze(-1)
         det_bboxes = torch.cat((det_bboxes, scores.unsqueeze(1)), -1)
         
-        # 关节点score需要重新计算, 原始是关节点得分直接为1,参考posewarper
         kpt_scores = scores[:, None, None] * det_kpts_score
-        # kpt_scores = det_kpts_score
 
         det_kpts = torch.cat(
             (det_kpts, kpt_scores), dim=2)
-        
-        # nms
-        keep, _ = oks_nms(det_kpts, scores, OKS_SCORE, np.array(OKS_SIGMAS) / 10.0)
-        tmp_det_kpts = []
-        tmp_det_labels = []
-        tmp_det_bboxes = []
-        for keep_ in keep:
-            tmp_det_kpts.append(det_kpts[keep_])
-            tmp_det_bboxes.append(det_bboxes[keep_])
-            tmp_det_labels.append(det_labels[keep_])
-        det_bboxes = torch.stack(tmp_det_bboxes, dim=0)
-        det_labels = torch.stack(tmp_det_labels, dim=0)
-        det_kpts = torch.stack(tmp_det_kpts, dim=0)
 
         return det_bboxes, det_labels, det_kpts
     

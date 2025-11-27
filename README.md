@@ -19,11 +19,10 @@ Here are some qualitative results from both the PoseTrack dataset and real-world
 ![Result 1](vs1.png)
 ![Result 2](vs2.png)
 
-
 ## Usage and Install 
 To download some auxiliary materials, please refer to [DCPose](https://github.com/Pose-Group/DCPose).
 
-Follow the [PETR](https://github.com/hikvision-research/opera) to install the mmpose.
+Follow the [PETR](https://github.com/hikvision-research/opera) to install the mmcv and mmdetection.
 ### Training
 ```
 python tools/train.py --cfg your_config.yaml
@@ -44,5 +43,4 @@ If you find our paper useful in your research, please consider citing:
 ```
 
 ## Acknowledgment
-
 Our codes are mainly based on [PETR](https://github.com/hikvision-research/opera). Part of our code is borrowed from [DCPose](https://github.com/Pose-Group/DCPose) and [RLE](https://github.com/jeffffffli/res-loglikelihood-regression). Many thanks to the authors!
