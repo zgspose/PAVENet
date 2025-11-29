@@ -12,7 +12,7 @@ Extensive experiments on video pose estimation benchmarks demonstrate that our P
 ![PAVENet](pipeline.png)
 
 ## Weights Download
-The model weights will be uploaded soon. Please stay tuned.
+The pretrained model weights have been released and are available for download at: https://drive.google.com/drive/folders/1HpRY2NsfXLvLtHtX3r_B2nmQAWEKoCNQ?usp=drive_link.
 
 ## Visualizations
 Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
