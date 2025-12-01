@@ -9,15 +9,17 @@ Existing multi-person video pose estimation methods usually follow a two-stage p
 To ensure accurate temporal association, we introduce a pose-aware attention mechanism, enabling each pose query to precisely aggregate features corresponding exclusively to the same individual throughout the video. Additionally, we explicitly model spatiotemporal dependencies among keypoints of each pose, further improving estimation accuracy.
 Extensive experiments on video pose estimation benchmarks demonstrate that our PAVE-Net not only significantly surpasses previous end-to-end image-based methods, but also competes favorably with state-of-the-art two-stage video-based approaches in terms of both accuracy and efficiency.
 
-![PAVENet](pipeline.png)
+![PAVENet](demo/pipeline.png)
 
 ## Weights Download
 The pretrained model weights have been released and are available for download at: https://drive.google.com/drive/folders/1HpRY2NsfXLvLtHtX3r_B2nmQAWEKoCNQ?usp=drive_link.
-
+## Quantitative Performance
+Our results show that, particularly in multi-person scenarios, our method significantly outperforms two-stage approaches in inference speed, while achieving accuracy on par with two-stage methods that rely on static images.
+![table ](demo/sd.png)
 ## Visualizations
 Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
-![Result 1](vs1.png)
-![Result 2](vs2.png)
+![Result 1](demo/vs1.png)
+![Result 2](demo/vs2.png)
 
 ## Usage and Install 
 To download some auxiliary materials, please refer to [DCPose](https://github.com/Pose-Group/DCPose).
