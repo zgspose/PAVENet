@@ -48,9 +48,19 @@ The following figure shows the speed advantage of the method we proposed over th
     <tr><td>DCPose</td><td>150</td><td>204</td><td>292</td><td>431</td><td>721</td></tr>
     <tr><td>DSTA</td><td>122</td><td>181</td><td>265</td><td>418</td><td>631</td></tr>
     <tr><td colspan="6"><strong>End-to-End</strong></td></tr>
-    <tr><td>PETR</td><td>—</td><td>—</td><td>116</td><td>—</td><td>—</td></tr>
-    <tr><td>GroupPose</td><td>—</td><td>—</td><td>89</td><td>—</td><td>—</td></tr>
-    <tr><td><strong>PAVE-Net (Ours)</strong></td><td>—</td><td>—</td><td>153</td><td>—</td><td>—</td></tr>
+    <tr>
+      <td>PETR</td>
+      <td colspan="5" style="text-align:center">116</td>
+    </tr>
+    <tr>
+      <td>GroupPose</td>
+      <td colspan="5" style="text-align:center">89</td>
+    </tr>
+    <tr>
+      <td><strong>PAVE-Net (Ours)</strong></td>
+      <td colspan="5" style="text-align:center">153</td>
+    </tr>
+
   </tbody>
 </table>
 </div>
