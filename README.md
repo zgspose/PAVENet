@@ -31,17 +31,29 @@ The following figure demonstrates the accuracy advantage of the method we propos
 | PAVE-Net (Ours)      | Swin-L         | 88.2  | 89.1  | 81.7  | 74.8  | 81.6  | 78.5  | 71.8  | 81.3  |
 
 The following figure shows the speed advantage of the method we proposed over the current advanced two-stage algorithms, especially when there are a large number of people. Note: All results were obtained using a single A800 GPU, and the unit is milliseconds (ms).
-|                      | **Number of Persons (ms)**           |
-|----------------------|------|-----|-----|-----|-----|
-| **Method**           | 1    | 3   | 5   | 10  | 20  |
-| **Two-Stage (Top-Down)** |      |     |     |     |     |
-| DCPose [24]          | 150  | 204 | 292 | 431 | 721 |
-| DSTA [14]            | 122  | 181 | 265 | 418 | 631 |
-| **End-to-End**       |      |     |     |     |     |
-| PETR [32]†           | —    | —   | 116 | —   | —   |
-| GroupPose [23]†      | —    | —   | 89  | —   | —   |
-| **PAVE-Net (Ours)**  | —    | —   | 153 | —   | —   |
-
+<div align="center">
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th colspan="5"><strong>Number of Persons (ms)</strong></th>
+    </tr>
+    <tr>
+      <th>Method</th>
+      <th>1</th><th>3</th><th>5</th><th>10</th><th>20</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="6"><strong>Two-Stage (Top-Down)</strong></td></tr>
+    <tr><td>DCPose</td><td>150</td><td>204</td><td>292</td><td>431</td><td>721</td></tr>
+    <tr><td>DSTA</td><td>122</td><td>181</td><td>265</td><td>418</td><td>631</td></tr>
+    <tr><td colspan="6"><strong>End-to-End</strong></td></tr>
+    <tr><td>PETR</td><td>—</td><td>—</td><td>116</td><td>—</td><td>—</td></tr>
+    <tr><td>GroupPose</td><td>—</td><td>—</td><td>89</td><td>—</td><td>—</td></tr>
+    <tr><td><strong>PAVE-Net (Ours)</strong></td><td>—</td><td>—</td><td>153</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+</div>
 
 ## Visualizations
 Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
