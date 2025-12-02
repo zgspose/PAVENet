@@ -1,20 +1,36 @@
 # End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer
 
-This repo is the official implementation for **End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer**[arxiv](https://arxiv.org/abs/2511.13208). The paper has been accepted to [AAAI 2026](https://aaai.org/conference/aaai/aaai-26/).
+This repo is the official implementation for **End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer** [arxiv](https://arxiv.org/abs/2511.13208). The paper has been accepted to [AAAI 2026](https://aaai.org/conference/aaai/aaai-26/).
 
 
 ## Introduction
 
-Existing multi-person video pose estimation methods usually follow a two-stage pipeline, first detecting human instances in each frame and then applying temporal models for single-person pose estimation. This approach involves multiple heuristic operations, including human tracking, RoI cropping, and non-maximum suppression (NMS), limiting the overall efficiency and accuracy.In this paper, we present PAVE-Net, the first fully end-to-end framework for multi-person pose estimation in videos, effectively eliminating these heuristic operations. A core challenge for our approach is accurately associating individuals across frames, given multiple independently yet overlapping temporal trajectories.To address this, we propose a novel Pose-Aware Video Transformer Network (PAVE-Net). Specifically, our method first employs a spatial encoder to model local dependencies among detected objects within individual frames. Then, a spatiotemporal pose decoder captures global dependencies between pose queries and feature tokens across multiple frames.
-To ensure accurate temporal association, we introduce a pose-aware attention mechanism, enabling each pose query to precisely aggregate features corresponding exclusively to the same individual throughout the video. Additionally, we explicitly model spatiotemporal dependencies among keypoints of each pose, further improving estimation accuracy.
-Extensive experiments on video pose estimation benchmarks demonstrate that our PAVE-Net not only significantly surpasses previous end-to-end image-based methods, but also competes favorably with state-of-the-art two-stage video-based approaches in terms of both accuracy and efficiency.
+Existing multi-person video pose estimation methods typically adopt a two-stage pipeline: detecting individuals in each frame, followed by temporal modeling for single
+person pose estimation. This design relies on heuristic operations such as detection, RoI cropping, and non-maximum suppression (NMS), limiting both accuracy and efficiency.
+In this paper, we present a fully end-to-end framework for multi-person 2D pose estimation in videos, effectively eliminating heuristic operations. A key challenge is to associate individuals across frames under complex and overlapping temporal trajectories. To address this, we introduce a novel Pose-Aware Video transformEr Network (PAVE-Net),
+which features a spatial encoder to model intra-frame relations and a spatiotemporal pose decoder to capture global dependencies across frames. To achieve accurate temporal association, we propose a pose-aware attention mechanism that enables each pose query to selectively aggregate features corresponding to the same individual across consecutive frames. Additionally, we explicitly model spatiotemporal dependencies among pose keypoints to improve accuracy. Notably, our approach is the first end-to-end method for multi-frame 2D human pose estimation. Extensive experiments show that PAVE-Net substantially outperforms prior image-based end-to-end methods, achieving a 6.0 mAP improvement on PoseTrack2017, and delivers accuracy competitive with state-of-the-art two-stage video based approaches, while offering significant gains in efficiency.
 
 ![PAVENet](demo/pipeline.png)
 
 ## Weights Download
-The pretrained model weights have been released and are available for download at: https://drive.google.com/drive/folders/1HpRY2NsfXLvLtHtX3r_B2nmQAWEKoCNQ?usp=drive_link.
+The pretrained model weights have been released and are available for download at:[Resnet50] (https://drive.google.com/drive/folders/1TSTbrm6jjq4LaK1CxqUNobcb6nF4LbMb?usp=drive_link) and [Swin-L](https://drive.google.com/drive/folders/17b9Oy9Sk_k5OjdzhKbaU4b2Qdr-4ksf3?usp=drive_link).
 ## Quantitative Performance
-Our results show that, particularly in multi-person scenarios, our method significantly outperforms two-stage approaches in inference speed, while achieving accuracy on par with two-stage methods that rely on static images.
+The following figure demonstrates the accuracy advantage of the method we proposed over the current advanced end-to-end algorithms based on static images.
+| Method               | Backbone       | Head  |Shoulder| Elbow| Wrist |  Hip  | Knee  | Ankle | Mean |
+|----------------------|----------------|-------|-------|-------|-------|-------|-------|-------|-------|
+| **Image-Based**      |                |       |       |       |       |       |       |       |       |
+| PETR (2022)          | ResNet-50      | 80.5  | 80.8  | 71.3  | 62.1  | 73.4  | 68.5  | 61.2  | 71.7  |
+| GroupPose (2023)     | ResNet-50      | 82.4  | 82.1  | 73.3  | 64.3  | 74.4  | 70.7  | 63.7  | 73.6  |
+| PETR (2022)          | HRNet-W48      | 82.4  | 83.2  | 74.4  | 70.8  | 74.5  | 72.3  | 66.9  | 75.4  |
+| GroupPose (2023)     | HRNet-W48      | 83.3  | 84.3  | 77.8  | 70.3  | 75.6  | 72.8  | 66.8  | 76.3  |
+| PETR (2022)          | Swin-L         | 83.3  | 84.3  | 78.3  | 71.3  | 76.4  | 73.4  | 67.6  | 76.8  |
+| GroupPose (2023)     | Swin-L         | 83.9  | 84.7  | 78.8  | 70.6  | 77.5  | 74.4  | 68.7  | 77.4  |
+| **Video-Based**      |                |       |       |       |       |       |       |       |       |
+| PAVE-Net (Ours)      | ResNet-50      | 86.5  | 87.4  | 78.9  | 69.3  | 78.2  | 73.8  | 65.8  | 77.7  |
+| PAVE-Net (Ours)      | HRNet-W48      | 87.1  | 88.4  | 80.9  | 73.9  | 80.3  | 76.9  | 69.9  | 80.1  |
+| PAVE-Net (Ours)      | Swin-L         | 88.2  | 89.1  | 81.7  | 74.8  | 81.6  | 78.5  | 71.8  | 81.3  |
+
+The following figure shows the speed advantage of the method we proposed over the current advanced two-stage time algorithms, especially when there are a large number of people.
 ![table ](demo/sd.png)
 ## Visualizations
 Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
@@ -36,11 +52,11 @@ python tools/test.py --cfg your_config.yaml
 ### Citations
 If you find our paper useful in your research, please consider citing:
 ```
-@article{yu2025end,
+@inproceedings{yu2025end,
   title={End-to-End Multi-Person Pose Estimation with Pose-Aware Video Transformer},
   author={Yu, Yonghui and Cai, Jiahang and Wang, Xun and Yang, Wenwu},
-  journal={arXiv preprint arXiv:2511.13208},
-  year={2025}
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  year={2026}
 }
 ```
 
