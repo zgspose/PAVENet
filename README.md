@@ -31,15 +31,20 @@ The following figure demonstrates the accuracy advantage of the method we propos
 | PAVE-Net (Ours)      | Swin-L         | 88.2  | 89.1  | 81.7  | 74.8  | 81.6  | 78.5  | 71.8  | 81.3  |
 
 The following figure shows the speed advantage of the method we proposed over the current advanced two-stage algorithms, especially when there are a large number of people. Note: All results were obtained using a single A800 GPU, and the unit is milliseconds (ms).
-| Method                 | 1   | 3   | 5   | 10  | 20  |
-|------------------------|-----|-----|-----|-----|-----|
-| **Two-Stage (Top-Down)** |     |     |     |     |     |
-| DCPose [24]            | 150 | 204 | 292 | 431 | 721 |
-| DSTA [14]              | 122 | 181 | 265 | 418 | 631 |
-| **End-to-End**         |     |     |     |     |     |
-| PETR [32]†             | —   | —   | 116 | —   | —   |
-| GroupPose [23]†        | —   | —   | 89  | —   | —   |
-| **PAVE-Net (Ours)**    | —   | —   | 153 | —   | —   |
+<div align="center">
+
+|                      | **Number of Persons (ms)**   |
+|----------------------|------|-----|-----|-----|-----|
+| **Method**           | 1    | 3   | 5   | 10  | 20  |
+| **Two-Stage (Top-Down)** |      |     |     |     | |
+| DCPose [24]          | 150  | 204 | 292 | 431 | 721 |
+| DSTA [14]            | 122  | 181 | 265 | 418 | 631 |
+| **End-to-End**       |      |     |     |     |     |
+| PETR [32]†           | —    | —   | 116 | —   | —   |
+| GroupPose [23]†      | —    | —   | 89  | —   | —   |
+| **PAVE-Net (Ours)**  | —    | —   | 153 | —   | —   |
+</div>
+
 
 ## Visualizations
 Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
