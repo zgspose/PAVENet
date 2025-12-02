@@ -50,15 +50,15 @@ The following figure shows the speed advantage of the method we proposed over th
     <tr><td colspan="6"><strong>End-to-End</strong></td></tr>
     <tr>
       <td>PETR</td>
-      <td colspan="5" style="text-align:center">116</td>
+      <td colspan="5" style="text-align:center !important;">116</td>
     </tr>
     <tr>
       <td>GroupPose</td>
-      <td colspan="5" style="text-align:center">89</td>
+      <td colspan="5" style="text-align:center !important;">89</td>
     </tr>
     <tr>
       <td><strong>PAVE-Net (Ours)</strong></td>
-      <td colspan="5" style="text-align:center">153</td>
+      <td colspan="5" style="text-align:center !important;">153</td>
     </tr>
 
   </tbody>
