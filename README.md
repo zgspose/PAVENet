@@ -94,4 +94,4 @@ If you find our paper useful in your research, please consider citing:
 ```
 
 ## Acknowledgment
-Our codes are mainly based on [PETR](https://github.com/hikvision-research/opera). Part of our code is borrowed from [DCPose](https://github.com/Pose-Group/DCPose) and [RLE](https://github.com/jeffffffli/res-loglikelihood-regression). Many thanks to the authors!
+Our codes are mainly based on [PETR](https://github.com/hikvision-research/opera). Part of our code is borrowed from [DSTA](https://github.com/zgspose/DSTA)、[DCPose](https://github.com/Pose-Group/DCPose) and [RLE](https://github.com/jeffffffli/res-loglikelihood-regression). Many thanks to the authors!
