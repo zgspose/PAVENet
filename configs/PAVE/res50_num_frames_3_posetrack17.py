@@ -3,9 +3,9 @@ _base_ = [
 ]
 model = dict(
     type='opera.PAVE',
-    init_cfg=dict(type='Pretrained', checkpoint='pretrain_checkpoints/resnet50_coco_rle_frames3_15keypoints.pth'),
     backbone=dict(
         type='mmdet.ResNet',
+        init_cfg=dict(type='Pretrained', checkpoint='pretrain_checkpoints/petr_resnet50_coco.pth'),
         input_type='mul_frames',
         depth=50,
         num_stages=4,
