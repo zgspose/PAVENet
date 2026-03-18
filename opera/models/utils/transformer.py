@@ -6674,7 +6674,7 @@ class TransformerDecoderV2(TransformerLayerSequence):
                  num_keypoints=17,
                  **kwargs):
 
-        super(VideoPoseTransformerDecoderV2, self).__init__(*args, **kwargs)
+        super(TransformerDecoderV2, self).__init__(*args, **kwargs)
         self.return_intermediate = return_intermediate
         self.num_keypoints = num_keypoints
 
@@ -6770,7 +6770,7 @@ class TransformerDecoderV2_1(TransformerLayerSequence):
                  num_keypoints=17,
                  **kwargs):
 
-        super(VideoPoseTransformerDecoderV2_1, self).__init__(*args, **kwargs)
+        super(TransformerDecoderV2_1, self).__init__(*args, **kwargs)
         self.return_intermediate = return_intermediate
         self.num_keypoints = num_keypoints
 
@@ -7107,7 +7107,7 @@ class VideoPoseTransformerDecoder_N(TransformerLayerSequence):
                  num_keypoints=17,
                  **kwargs):
 
-        super(VideoPoseTransformerDecoderV2, self).__init__(*args, **kwargs)
+        super(TransformerDecoderV2, self).__init__(*args, **kwargs)
         self.return_intermediate = return_intermediate
         self.num_keypoints = num_keypoints
 

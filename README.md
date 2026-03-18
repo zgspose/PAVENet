@@ -70,6 +70,10 @@ Here are some qualitative results from both the PoseTrack dataset and real-world
 ![Result 1](demo/vs1.png)
 ![Result 2](demo/vs2.png)
 
+## Video Demo
+![demo 1](demo/demo2.gif)
+![demo 2](demo/demo1.gif)
+
 ## Usage and Install 
 To download some auxiliary materials, please refer to [DCPose](https://github.com/Pose-Group/DCPose).
 
@@ -82,7 +86,11 @@ python tools/train.py --cfg your_config.yaml
 ```
 python tools/test.py --cfg your_config.yaml
 ```
-### Citations
+### Video Inference
+```
+python demo/video_inference.py --cfg your_config.yaml
+```
+## Citations
 If you find our paper useful in your research, please consider citing:
 ```
 @inproceedings{yu2025end,
