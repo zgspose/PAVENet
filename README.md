@@ -67,6 +67,7 @@ The following figure shows the speed advantage of the method we proposed over th
 
 ## Visualizations
 Here are some qualitative results from both the PoseTrack dataset and real-world scenarios:
+
 ![Result 1](demo/vs1.png)
 ![Result 2](demo/vs2.png)
 
