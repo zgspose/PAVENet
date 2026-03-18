@@ -79,6 +79,12 @@ Here are some qualitative results from both the PoseTrack dataset and real-world
 To download some auxiliary materials, please refer to [DCPose](https://github.com/Pose-Group/DCPose).
 
 Follow the [PETR](https://github.com/hikvision-research/opera) to install the mmcv and mmdetection.
+### Train Data Process
+The training data we use is derived from [DCPose](https://github.com/Pose-Group/DCPose), which provides joint point labels of 17 points, while the original posetrack dataset itself only has 15 joint points. To facilitate data processing and model training, we removed the label data of two joint points (left ear and right ear) that were not used in testing. Before training with this project, you can either process it yourself or use the script provided by this project.
+
+```
+python tools/data_process.py
+```
 ### Training
 ```
 python tools/train.py --cfg your_config.yaml
