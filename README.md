@@ -95,7 +95,7 @@ python tools/test.py --cfg your_config.yaml
 ```
 ### Video Inference
 ```
-python demo/video_inference.py --cfg your_config.yaml
+python demo/video_inference.py --cfg your_config.yaml --checkpoint use_model_path --video your_video_path
 ```
 ## Citations
 If you find our paper useful in your research, please consider citing:
