@@ -2,7 +2,10 @@ _base_ = [
     '../../_base_/datasets/posetrack17_video_keypoint.py', '../../_base_/default_runtime.py'
 ]
 model = dict(
-    type='opera.PAVE',
+    # Note that the inconsistency between the model name and some configuration class names in the provided checkpoint files is caused by the fact 
+    # that the code version used during the early training stage was not fully synchronized with the updated project code after the paper acceptance. 
+    # You can simply use the provided configuration files as intended, and this issue will not affect the normal loading of the model weights.
+    type='opera.PAVE', 
     backbone=dict(
         type='mmdet.ResNet',
         init_cfg=dict(type='Pretrained', checkpoint='pretrain_checkpoints/petr_resnet50_coco.pth'),
